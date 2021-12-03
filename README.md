@@ -74,3 +74,4 @@ The tasks will
 * follow instructions from [Self-Hosting Guide - Docker](https://jitsi.github.io/handbook/docs/devops-guide/devops-guide-docker)
 * start the instance with `podman-compose up ...`
 
+A note on idempotency: The playbook is tested and I am at least 85% confident that I covered most cases but... you'll never know and have been warned ;)
