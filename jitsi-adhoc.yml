@@ -1,0 +1,142 @@
+---
+- name: Allow podman privileged ports for non root users
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_unprivileged_port_start
+    value: '80'
+    sysctl_file: /etc/sysctl.conf
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Add jitsi_user
+  ansible.builtin.user:
+    name: "{{ jitsi_user }}"
+    state: present
+
+- name: Install 'podman-compose' for jitsi_user
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.pip:
+    name: podman-compose
+    extra_args: --user
+
+- name: Generate directories
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.file:
+    path: "/home/{{ jitsi_user }}/.jitsi-meet-cfg/{{ item }}"
+    state: directory
+    mode: '0775'
+    # owner: "{{ jitsi_user }}"
+    # group: "{{ jitsi_user }}"
+  loop:
+    - "web/crontabs"
+    - "web/letsencrypt"
+    - "transcripts"
+    - "prosody/config"
+    - "prosody/prosody-plugins-custom"
+    - "jicofo"
+    - "jvb"
+    - "jigasi"
+    - "jibri"
+
+- name: Download jitsi release
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.get_url:
+    url: "https://github.com/jitsi/docker-jitsi-meet/archive/refs/tags/{{ jitsi_release }}.tar.gz"
+    dest: "/home/{{ jitsi_user }}/jitsi-{{ jitsi_release }}.tar.gz"
+  register: jitsi_download
+
+- name: Extract jitsi
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.unarchive:
+    src: "/home/{{ jitsi_user }}/jitsi-{{ jitsi_release }}.tar.gz"
+    dest: "/home/{{ jitsi_user }}/"
+    remote_src: true
+  when: jitsi_download.changed|bool
+
+- name: Copy config template
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.copy:
+    src: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}/env.example"
+    dest: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}/.env"
+    remote_src: true
+  when: jitsi_download.changed|bool
+
+- name: Generate passwords
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.command: ./gen-passwords.sh
+  args:
+    chdir: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}"
+  when: jitsi_download.changed|bool
+
+- name: Generate config
+  ansible.builtin.lineinfile:
+    path: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}/.env"
+    regexp: "^{{ item.in }}"
+    line: "{{ item.out }}"
+  loop:
+    - {in: "HTTP_PORT", out: "HTTP_PORT=80"}
+    - {in: "HTTPS_PORT", out: "HTTPS_PORT=443"}
+    - {in: "#ENABLE_HTTP_REDIRECT", out: "ENABLE_HTTP_REDIRECT=1"}
+    - {in: "#PUBLIC_URL", out: "PUBLIC_URL=https://{{ jitsi_url }}"}
+    - {in: "#ENABLE_LETSENCRYPT", out: "ENABLE_LETSENCRYPT=1"}
+    - {in: "#LETSENCRYPT_DOMAIN", out: "LETSENCRYPT_DOMAIN={{ jitsi_url }}"}
+    - {in: "#LETSENCRYPT_EMAIL", out: "LETSENCRYPT_EMAIL={{ jitsi_le_mail }}"}
+  when: jitsi_download.changed|bool
+
+- name: Generate config - use letsencrypt staging API
+  ansible.builtin.lineinfile:
+    path: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}/.env"
+    regexp: "^#LETSENCRYPT_USE_STAGING"
+    line: "LETSENCRYPT_USE_STAGING=1"
+  when:
+    - jitsi_download.changed|bool
+    - jitsi_le_staging is defined
+    - jitsi_le_staging
+
+- name: Check jitsi
+  ignore_errors: true
+  ansible.builtin.uri:
+    url: "http://{{ jitsi_url }}"
+    validate_certs: false
+  register: jitsi_http_a
+  when: not jitsi_download.changed|bool
+
+- name: Run podman-compose down
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.command: ~/.local/bin/podman-compose down
+  args:
+    chdir: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}"
+  when:
+    - jitsi_http_a.status is defined
+    - jitsi_http_a.status|int != 200
+
+- name: Run podman-compose up
+  become_user: "{{ jitsi_user }}"
+  become: true
+  ansible.builtin.command: ~/.local/bin/podman-compose --podman-run-args "--env-file .env --add-host xmpp.meet.jitsi:127.0.0.1" up -d
+  args:
+    chdir: "/home/{{ jitsi_user }}/docker-jitsi-meet-{{ jitsi_release }}"
+  when: ( jitsi_download.changed|bool or jitsi_http_a.status|int != 200 )
+  register: jitsi_up
+
+- name: Check jitsi every 10s
+  ansible.builtin.uri:
+    url: "http://{{ jitsi_url }}"
+    validate_certs: false
+  register: jitsi_http_b
+  until: jitsi_http_b.status == 200
+  retries: 5
+  delay: 10
+  when: jitsi_up.changed
+
+- name: Jitsi up & running
+  debug:
+    msg: "yeah, see you at http://{{ jitsi_url }}"
+  when: (jitsi_http_a.status is defined and jitsi_http_a.status|int == 200 or jitsi_http_b.status|int == 200)

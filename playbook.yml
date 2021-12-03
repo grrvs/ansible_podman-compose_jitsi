@@ -1,0 +1,19 @@
+---
+- hosts: all
+  tasks:
+    - name: Install podman and python3
+      package:
+        name:
+          - podman
+          - python3
+        state: present
+    - name: Setup jitsi with podman-compose
+      import_tasks: jitsi-adhoc.yml
+      tags:
+        - jitsi
+      vars:
+        jitsi_release: stable-6433  # https://github.com/jitsi/docker-jitsi-meet/releases/latest
+        jitsi_user: alice
+        jitsi_url: meet.example.com
+        jitsi_le_mail: alice@atlanta.net
+        # jitsi_le_staging: true  # use letsencrypt staging api
