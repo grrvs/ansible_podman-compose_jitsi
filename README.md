@@ -1,16 +1,14 @@
 # Ansible running jitsi's `docker-compose up` with podman-compose
 
-Following jitsi's [Self-Hosting Guide - Docker](https://jitsi.github.io/handbook/docs/devops-guide/devops-guide-docker) using podman I fell down a rabbit hole - this is how I got out.
+Following jitsi's [Self-Hosting Guide - Docker](https://jitsi.github.io/handbook/docs/devops-guide/devops-guide-docker) using podman I fell down a rabbit hole - this is how I got out. I just followed the *Quick start* up to point 6 (no `jigasi`, no `etherpad`, no `jibri`).
 
 Problem: 
-* `podman-compose` does not honor the `networks:...` part in a docker-compose file (podman-compose [issue #288](https://github.com/containers/podman-compose/issues/288)). 
-* this results in config templating not working / missing upstreams in nginx config / see-for-yourself in docker-jitsi-meet [issue #201](https://github.com/jitsi/docker-jitsi-meet/issues/201)
+* `podman-compose` does not honor the `networks:...` part in a docker-compose file (podman-compose [issue #288](https://github.com/containers/podman-compose/issues/288)). This results in unknown hence unreachable upstreams in the http proxy / nginx.
+* Some environment variables missing [comment in issue #201](https://github.com/jitsi/docker-jitsi-meet/issues/201#issuecomment-609023954). I do not know if this is a `podman-compose` exclusive issue but the result is "unfinished" config templating.
 
-
-The good news is that if you followed the self-hosting guide, just run `podman-compose up` with some extra arguments and you should be good to go:
-
+The good news is that if you followed the self-hosting guide, just run `podman-compose up` with some extra parameters and you should be good to go:
 ```
-[bob@v3834 docker-jitsi-meet-stable-6433]$ podman-compose --podman-run-args "--env-file .env --add-host xmpp.meet.jitsi:127.0.0.1" up -d
+[bob@somehost docker-jitsi-meet-stable-6433]$ podman-compose --podman-run-args "--env-file .env --add-host xmpp.meet.jitsi:127.0.0.1" up -d
 ['podman', '--version', '']
 using podman version: 3.4.1-dev
 ** excluding:  set()
