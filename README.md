@@ -73,3 +73,16 @@ The tasks will
 * start the instance with `podman-compose up ...`
 
 A note on idempotency: The playbook is tested and I am at least 85% confident that I covered most cases but... you'll never know and have been warned ;)
+
+Used OS / software versions:
+```
+[bob@somehost ~]$ podman-compose --version
+['podman', '--version', '']
+using podman version: 3.4.1-dev
+podman-composer version  0.1.9
+podman --version
+podman version 3.4.1-dev
+exit code: 0
+[bob@somehost ~]$ cat /etc/redhat-release
+CentOS Stream release 8
+```
